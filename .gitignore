@@ -1,0 +1,14 @@
+<<<<<<< HEAD
+.obsidian/
+=======
+.obsidian/*
+.makemd/*
+.space/*
+.trash/*
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+>>>>>>> dc5c6fd (vault backup: 2025-04-15 21:36:48)
