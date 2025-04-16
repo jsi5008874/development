@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-.obsidian/
-=======
 .obsidian/*
 .makemd/*
 .space/*
@@ -11,4 +8,4 @@
 ._*
 .Spotlight-V100
 .Trashes
->>>>>>> dc5c6fd (vault backup: 2025-04-15 21:36:48)
+
