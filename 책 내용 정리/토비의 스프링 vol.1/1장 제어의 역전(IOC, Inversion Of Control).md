@@ -52,8 +52,8 @@ IOC를 프레임워크만의 기술이라고 착각하면 안되고 디자인 �
 
   
 
-[[스프링의 IOC(vol1 p.95)]]
+[[1.1 스프링의 IOC]]
 
-[[싱글톤 레지스트리]]
+[[1.2 싱글톤 레지스트리]]
 
-[[의존관계 주입(DI, Dependency Injection)]]
+[[1.3 의존관계 주입(DI, Dependency Injection)]]
