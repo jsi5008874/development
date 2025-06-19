@@ -1,0 +1,211 @@
+<style>
+
+/* 플로팅 버튼 공통 스타일 */
+#floatingMenuBtn,
+#scrollToTopBtn,
+#goBackBtn,
+#goHomeBtn {
+    position: fixed;
+    width: 60px;
+    height: 60px;
+    background-color: var(--background-secondary-alt);
+    color: var(--text-normal);
+    border: 2px solid #404040;
+    border-radius: 50%;
+    font-size: 30px;
+    text-align: center;
+    line-height: 60px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out, transform 0.2s;
+    box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.5);
+    z-index: 99999;
+}
+
+#floatingMenuBtn:hover,
+#scrollToTopBtn:hover,
+#goBackBtn:hover,
+#goHomeBtn:hover {
+    background-color: var(--color-accent);
+    transform: scale(1.2);
+}
+</style>
+<script>
+
+(function(){
+    const rootPath = document.querySelector('meta#root-path')?.getAttribute('root-path') || './';
+    const homeDataPath = "JooSeong Dev Blog.html";
+    const homeFile = "jooseong-dev-blog.html";
+
+    function goHome(evt){
+        if(evt) evt.preventDefault();
+        const treeLink = document.querySelector(`.tree-container a[data-path="${homeDataPath}"]`);
+        const url = (rootPath.endsWith('/') ? rootPath : rootPath + '/') + homeFile;
+        if(treeLink && typeof window.loadDocument === 'function'){
+            window.loadDocument(treeLink.getAttribute('href'), true, true);
+        }else{
+            location.href = url;
+        }
+    }
+    function forceDarkTheme(){
+        document.body.classList.add('theme-dark');
+        document.body.classList.remove('theme-light');
+        const themeToggle = document.querySelector('.theme-toggle-input');
+        if(themeToggle){
+            themeToggle.checked = true;
+            themeToggle.disabled = true;
+        }
+        const topbar = document.querySelector('.topbar-content');
+        if(topbar){
+            const homeUrl = (rootPath.endsWith('/') ? rootPath : rootPath + '/') + homeFile;
+            topbar.innerHTML = `
+                <a class="tree-item-self is-clickable nav-file-title" href="${homeUrl}" data-path="${homeDataPath}">
+                    <div class="tree-item-inner nav-file-title-content">JooSeongDevBlog</div>
+                </a>`;
+            const homeLink = topbar.querySelector('a');
+            if(homeLink){
+                homeLink.addEventListener('click', evt => {
+                    goHome(evt);
+                });
+            }
+        }
+    }
+
+    function handleResize(){ updateScrollButtonPosition(); }
+
+    let resizeObserver;
+    function observeMarkdownPreviewResize(){
+        if(resizeObserver) return;
+        const container = document.querySelector('.sidebar-right.sidebar');
+        if(!container) return;
+        resizeObserver = new ResizeObserver(handleResize);
+        resizeObserver.observe(container);
+    }
+
+    function updateScrollButtonPosition(){
+        const sidebar = document.querySelector('.sidebar-right.sidebar');
+        const menuBtn = document.getElementById('floatingMenuBtn');
+        const topBtn = document.getElementById('scrollToTopBtn');
+        const backBtn = document.getElementById('goBackBtn');
+        const homeBtn = document.getElementById('goHomeBtn');
+        if(!sidebar || !menuBtn) return;
+        const sidebarRect = sidebar.getBoundingClientRect();
+        const buttonWidth = 60;
+        const padding = 90;
+        const right = `${window.innerWidth - sidebarRect.left - buttonWidth + padding}px`;
+        menuBtn.style.right = right;
+        if(topBtn) topBtn.style.right = right;
+        if(backBtn) backBtn.style.right = right;
+        if(homeBtn) homeBtn.style.right = right;
+    }
+
+    function addFloatingButtons(){
+        const container = document.querySelector('.sidebar-right.sidebar');
+        if(!container) return;
+        let menuBtn = document.getElementById('floatingMenuBtn');
+        if(!menuBtn){
+            menuBtn = document.createElement('button');
+            menuBtn.id = 'floatingMenuBtn';
+            container.appendChild(menuBtn);
+        }
+        menuBtn.innerHTML = '+'; // reset to collapsed state on page load
+        let topBtn = document.getElementById('scrollToTopBtn');
+        if(!topBtn){
+            topBtn = document.createElement('button');
+            topBtn.id = 'scrollToTopBtn';
+            topBtn.innerHTML = '&#9650;';
+            container.appendChild(topBtn);
+        }
+        let backBtn = document.getElementById('goBackBtn');
+        if(!backBtn){
+            backBtn = document.createElement('button');
+            backBtn.id = 'goBackBtn';
+            backBtn.innerHTML = '&#8592;';
+            container.appendChild(backBtn);
+        }
+        let homeBtn = document.getElementById('goHomeBtn');
+        if(!homeBtn){
+            homeBtn = document.createElement('button');
+            homeBtn.id = 'goHomeBtn';
+            homeBtn.innerHTML = '&#8962;';
+            container.appendChild(homeBtn);
+        }
+        menuBtn.style.position = 'fixed';
+        menuBtn.style.bottom = '60px';
+        menuBtn.style.right = '60px';
+        menuBtn.style.opacity = '1';
+        menuBtn.style.visibility = 'visible';
+        [topBtn, backBtn, homeBtn].forEach((btn, idx)=>{
+            btn.style.position = 'fixed';
+            btn.style.bottom = `${60 + (idx + 1) * 70}px`;
+            btn.style.right = '60px';
+            btn.style.zIndex = '99998';
+            btn.style.opacity = '0';
+            btn.style.visibility = 'hidden';
+        });
+        updateScrollButtonPosition();
+        menuBtn.onclick = ()=>{
+            const visible = topBtn.style.visibility === 'visible';
+            if(visible){
+                [topBtn, backBtn, homeBtn].forEach(btn=>{
+                    btn.style.opacity = '0';
+                    btn.style.visibility = 'hidden';
+                });
+                menuBtn.innerHTML = '+';
+            }else{
+                [topBtn, backBtn, homeBtn].forEach(btn=>{
+                    btn.style.opacity = '1';
+                    btn.style.visibility = 'visible';
+                });
+                menuBtn.innerHTML = '×';
+            }
+        };
+        topBtn.onclick = ()=>{
+            const scrollContainer = document.querySelector('.markdown-preview-view');
+            if(scrollContainer) scrollContainer.scrollTo({top:0,behavior:'smooth'});
+        };
+        backBtn.onclick = ()=>{
+            if(history.length > 1){
+                history.back();
+            }else{
+                location.href = rootPath;
+            }
+        };
+        homeBtn.onclick = goHome;
+        window.addEventListener('resize', updateScrollButtonPosition);
+    }
+
+    function initFloatingMenu(){
+        forceDarkTheme();
+        addFloatingButtons();
+        updateScrollButtonPosition();
+        observeMarkdownPreviewResize();
+    }
+
+    function patchSetActiveDocument(){
+        if(typeof window.setActiveDocument !== 'function' || window.setActiveDocument._patched) return;
+        const original = window.setActiveDocument;
+        window.setActiveDocument = function(...args){
+            const result = original.apply(this,args);
+            initFloatingMenu();
+            return result;
+        };
+        window.setActiveDocument._patched = true;
+        initFloatingMenu();
+    }
+
+    function waitForPatch(){
+        if(typeof window.setActiveDocument === 'function'){
+            patchSetActiveDocument();
+        }else{
+            setTimeout(waitForPatch,100);
+        }
+    }
+
+    if(document.readyState === 'loading'){
+        document.addEventListener('DOMContentLoaded', waitForPatch);
+    }else{
+        waitForPatch();
+    }
+})();
+</script>
