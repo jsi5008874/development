@@ -227,7 +227,7 @@ Elasticsearch에서 정의한 표준화된 로그 데이터 형식
 spring boot에서 여러 설정을 변경했기 때문에 jenkins로 빌드 및 재실행을 해준다.
 
 jenkins 빌드 중 문제 발생(docker-compose network)
-[[jenkins docker-compose 네트워크 설정 문제]]
+[[1-7 jenkins docker-compose 네트워크 설정 문제]]
 
 
 docker-compose 재시작
