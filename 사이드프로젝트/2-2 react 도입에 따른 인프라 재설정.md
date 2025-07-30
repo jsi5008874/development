@@ -500,3 +500,36 @@ CORS가 다른 도메인의 요청을 허용하는 역할인데 preflight는 위
 **SPA fallback**
 Single Page Application에서 클라이언트 라우팅을 지원하기 위해, 존재하지 않는 경로에 대해 메인 HTML 파일(index.html)을 제공하는 메커니즘
 
+**fallback 예시**
+```
+# fallback 없을 때
+1. 사용자가 직접 URL 입력 https://anonichat.world/chat/123 
+2. nginx: "/chat/123 파일이 없네? 404!" 
+3. 사용자: "사이트가 망가졌나?"
+
+# fallback 해결
+1. nginx: "/chat/123 없음 → 404"
+2. nginx: "어? 404니까 @fallback 실행"
+3. @fallback: "React에게 다시 요청 (루트로)" 
+4. React: "index.html 줄게" 
+5. 브라우저: "React Router야, /chat/123 처리해줘" 
+6. 사용자: "채팅방 나왔다!"
+```
+
+**설정 별 역할**
+`location @fallback`
+- `@` = Named Location (에러 처리 전용)
+- 404 에러가 발생했을 때만 실행되는 특별한 location
+
+`proxy_pass http://react-frontend`
+- React 컨테이너에게 "다시 한 번 요청해줘"
+- 하지만 이번에는 `/` (루트)로 요청
+
+`proxy_set_header`들
+- **Host**: "요청 도메인이 anonichat.world야"
+- **X-Real-IP**: "실제 사용자 IP는 이거야"
+- **X-Forwarded-For**: "프록시 경로는 이래"
+- **X-Forwarded-Proto**: "원본은 HTTPS였어"
+
+
+**결론**: SPA Fallback 덕분에 React 앱의 모든 페이지가 **북마크 가능하고 직접 접속 가능**
