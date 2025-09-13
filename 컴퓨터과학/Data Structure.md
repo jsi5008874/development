@@ -17,3 +17,5 @@
 [[트리(Tree)와 이진트리(Binary tree)]]
 
 [[B Tree]]
+
+[[Skip List]]
