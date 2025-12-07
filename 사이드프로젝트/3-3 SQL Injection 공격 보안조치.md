@@ -565,3 +565,227 @@ curl -X POST http://localhost:8080/api/matching/queue \
 
 ![[Pasted image 20251204180842.png]]
 에러 로그가 생기는 것을 확인할 수 있다.
+
+
+### 로깅 및 모니터링 강화
+
+#### aop 로깅 추가
+```
+# aop 의존성 추가
+
+implementation 'org.springframework.boot:spring-boot-starter-aop'
+```
+
+#### SecurityLoggingAspect 추가
+```java
+
+@Slf4j  
+@Aspect  
+@Component  
+public class SecurityLoggingAspect {  
+  
+    /**  
+     * 매칭 관련 컨트롤러의 중요 액션 상세 로깅  
+     */  
+    @Before("execution(* Anoni.AnoniChat.controller.chat.MatchingController.*(..))")  
+    public void logMatchingAction(JoinPoint joinPoint) {  
+        HttpServletRequest request = getHttpServletRequest();  
+        if (request == null) return;  
+  
+        String clientIp = getClientIp(request);  
+        String methodName = joinPoint.getSignature().getName();  
+        Object[] args = joinPoint.getArgs();  
+  
+        // args 중에서 민감하지 않은 정보만 로깅  
+        String argsLog = getArgsLog(args);  
+  
+        log.info("MATCHING_ACTION|ip={}|action={}|params={}",  
+                clientIp, methodName, argsLog);  
+    }  
+  
+    /**  
+     * 매칭 관련 액션 성공 시 로깅  
+     */  
+    @AfterReturning(  
+            pointcut = "execution(* Anoni.AnoniChat.controller.chat.MatchingController.*(..))",  
+            returning = "result"  
+    )  
+    public void logMatchingSuccess(JoinPoint joinPoint, Object result) {  
+        HttpServletRequest request = getHttpServletRequest();  
+        if (request == null) return;  
+  
+        String clientIp = getClientIp(request);  
+        String methodName = joinPoint.getSignature().getName();  
+  
+        log.info("MATCHING_SUCCESS|ip={}|action={}|result={}",  
+                clientIp, methodName, result.getClass().getSimpleName());  
+    }  
+  
+    /**  
+     * 예외 발생 시 보안 이벤트 로깅  
+     * IllegalArgumentException, IllegalStateException은 비정상 요청으로 간주  
+     */  
+    @AfterThrowing(  
+            pointcut = "execution(* Anoni.AnoniChat.controller..*.*(..))",  
+            throwing = "ex"  
+    )  
+    public void logException(JoinPoint joinPoint, Exception ex) {  
+        HttpServletRequest request = getHttpServletRequest();  
+        if (request == null) return;  
+  
+        String clientIp = getClientIp(request);  
+        String uri = request.getRequestURI();  
+        String methodName = joinPoint.getSignature().getName();  
+  
+        // IllegalArgumentException이나 IllegalStateException은 비정상 요청일 가능성  
+        if (ex instanceof IllegalArgumentException || ex instanceof IllegalStateException) {  
+            // WARN 레벨 - Slack 알림 대상  
+            log.warn("SECURITY_ALERT|type=INVALID_REQUEST|ip={}|uri={}|method={}|error={}",  
+                    clientIp, uri, methodName, ex.getMessage());  
+        } else {  
+            // ERROR 레벨 - Slack 알림 대상  
+            log.error("ERROR|ip={}|uri={}|method={}|error={}",  
+                    clientIp, uri, methodName, ex.getMessage(), ex);  
+        }  
+    }  
+  
+
+// .... getClientIp 등 기타 메서드
+  
+}
+```
+AOP를 통해 matching 관련 요청마다 로그를 남긴다.
+이 때 에러가 발생하면 warn 또는 error 로그를 남기고 logstash로 넘어가게 된다.
+
+#### GlobalExceptionHandler 수정
+```java
+@ExceptionHandler(MethodArgumentNotValidException.class)  
+public ResponseEntity<Map<String, String>> handleValidationException(  
+        MethodArgumentNotValidException e,  
+        HttpServletRequest request) {  
+  
+    String clientIp = getClientIp(request);  
+    String uri = request.getRequestURI();  
+  
+    Map<String, String> errors = new HashMap<>();  
+    e.getBindingResult().getAllErrors().forEach(error -> {  
+        String fieldName = ((FieldError) error).getField();  
+        String errorMessage = error.getDefaultMessage();  
+        errors.put(fieldName, errorMessage);  
+  
+        // WARN 레벨로 로깅 - Slack 알림 트리거  
+        log.warn("SECURITY_ALERT|type=VALIDATION_FAIL|ip={}|uri={}|field={}|message={}",  
+                clientIp, uri, fieldName, errorMessage);  
+    });
+```
+GlobalExceptionHandler에 있는 메서드들에 IP 변수 추가 및 slack 알림 트리거 추가
+
+
+#### logback-spring.xml 수정
+```xml
+<appender name="SECURITY_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">  
+    <file>/var/log/annonichat/security.log</file>  
+    <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">  
+        <fileNamePattern>/var/log/annonichat/security.%d{yyyy-MM-dd}.log</fileNamePattern>  
+        <maxHistory>30</maxHistory>  
+        <totalSizeCap>1GB</totalSizeCap>  
+    </rollingPolicy>    <encoder>        <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level - %msg%n</pattern>  
+    </encoder>    <!-- SECURITY_ALERT 포함된 로그만 기록 -->  
+    <filter class="ch.qos.logback.core.filter.EvaluatorFilter">  
+        <evaluator>            <expression>message.contains("SECURITY_ALERT")</expression>  
+        </evaluator>        <OnMismatch>DENY</OnMismatch>  
+        <OnMatch>ACCEPT</OnMatch>  
+    </filter></appender>
+```
+security 관련 로그 설정을 추가
+
+#### logshtash.conf 수정
+```
+if [message] =~ /SECURITY_ALERT/ {
+            mutate {
+                add_field => { "alert_needed" => "true" }
+                add_field => { "alert_type" => "security" }
+            }
+
+            # 보안 이벤트 타입 추출 (VALIDATION_FAIL, INVALID_ARGUMENT, INVALID_STATE 등)
+            grok {
+                match => { "message" => "SECURITY_ALERT\|type=%{WORD:security_event_type}" }
+                tag_on_failure => ["_grok_security_type_parse_failure"]
+            }
+            # 클라이언트 IP 추출
+            grok {
+                match => { "message" => "ip=%{DATA:client_ip}\|" }
+                tag_on_failure => ["_grok_ip_parse_failure"]
+            }
+
+            # 요청 URI 추출
+            grok {
+                match => { "message" => "uri=%{DATA:request_uri}\|" }
+                tag_on_failure => ["_grok_uri_parse_failure"]
+            }
+
+.....
+
+            # 에러 메시지 추출 (message= 또는 error=)
+            grok {
+                match => { "message" => "(?:message|error)=%{GREEDYDATA:error_detail}" }
+                tag_on_failure => []
+            }
+        }
+
+
+# 보안 에러 알림 output
+    if [alert_needed] == "true" and [alert_type] == "security" {
+        http {
+            url => "https://hooks.slack.com/services/webhook URL"
+            http_method => "post"
+            content_type => "application/json"
+            format => "json"
+            mapping => {
+                "text" => "🚨 *AnoniChat 보안 이벤트 발생!*\n\n이벤트 타입: %{[security_event_type]}\n클라이언트 IP: %{[client_ip]}\n요청 URI: %{[request_uri]}\nHTTP Method: %{[http_method]}\nUser Agent: %{[user_agent]}\nQuery String: %{[query_string]}\nValidation Field: %{[validation_field]}\n시간: %{[@timestamp]}\n로그 레벨: %{[log.level]}\n스레드: %{[process.thread.name]}\n로거: %{[log.logger]}\n메시지: %{message}\n에러 상세: %{[error_detail]}\nTrace ID: %{[trace.id]}\n서비스: %{[service.name]}"
+            }
+        }
+```
+기존 error 알림 외에 보안 관련 알림을 추가 했다.
+새롭게 추가된 security alert 타입을 감지하여 security-alerts 채널로 전송하게끔 변경했다.
+
+```
+1. filter에서 SECURITY_ALERT 패턴 감지
+2. alert_needed = true, alert_type = security 설정
+3. grok으로 데이터 추출:
+   - security_event_type = INVALID_ARGUMENT
+   - client_ip = 192.168.1.1
+   - request_uri = /api/matching/queue
+   - error_detail = 유효하지 않은 카테고리
+4. output에서 alert_type = security 확인
+5. #security-alerts 채널로 전송
+   
+# grok이란?
+파싱을 위한 플러그인으로 로그 문자열에서 원하는 정보를 정형화된 필드로 추출해내는 도구
+
+ex)
+2025-12-07 10:30:15 [WARN] user_123 failed to access /api/v1/data (IP: 192.168.1.100) //로그 문자열
+↓
+filter { 
+grok { match => { "message" => "%{TIMESTAMP_ISO8601:timestamp} \[%{WORD:level}\] %{WORD:user} %{WORD:action} to %{URIHOST:path} \(IP: %{IP:client_ip}\)" } 
+	} 
+} // 필터에서 grok으로 데이터 추출
+↓
+{
+  "message": "2025-12-07 10:30:15 [WARN] user_123 failed to access /api/v1/data (IP: 192.168.1.100)",
+  "timestamp": "2025-12-07 10:30:15",
+  "level": "WARN",
+  "user": "user_123",
+  "action": "failed",
+  "path": "/api/v1/data",
+  "client_ip": "192.168.1.100"
+} // json 또는 ECS 형식으로 변환
+```
+
+#### 테스트
+burf suite로 요청을 변경해서 테스트
+![[Pasted image 20251208024539.png|975]]
+오류로 응답이 오는 것을 확인
+
+![[Pasted image 20251208024616.png]]
+slack에도 알람 에러가 발생하는 것을 볼 수 있다.
